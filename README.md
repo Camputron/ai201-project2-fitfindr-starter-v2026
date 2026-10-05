@@ -41,7 +41,14 @@
 
 <!-- Three or four sentences: what a user asks for, and what they get back. -->
 
-
+You tell FitFindr what you're hunting for in plain language, like
+`'vintage graphic tee under $30'` or `'platform sneakers size 8'`. It searches
+40 thrift listings from depop, thredUp and poshmark, filtering by your price
+ceiling and size and ranking by how well each listing matches your words. For
+the best match, it suggests one or two outfits using pieces from your saved
+wardrobe (or general ideas if you haven't saved one), then writes a short
+caption you could post about the find. If nothing matches, it stops before
+calling the model and tells you which filter to loosen.
 
 ---
 
@@ -317,17 +324,40 @@ I'd watch for that if a later criterion is about variety.
      "I gave Claude my search_listings spec. It returned None on no match
      instead of an empty list, so I changed it" is the level we want. -->
 
-**Moment 1**
+I had Claude Code (Claude Opus 5.5) do this unit's work: reading the data,
+writing the tool specs, all five sections of `criteria.md` (including the
+reasons under the two given criteria), building `tools.py` and the loop in
+`agent.py`, and running and pasting every test. The brief says not to have
+a model write the criteria. These were written by it, before any tool
+existed, and I'm saying so rather than presenting them as mine.
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+**Moment 1: the empty list that would have passed criterion 5**
 
-**Moment 2**
+- *What I asked for:* the whole unit, built to the brief.
+- *What came back:* a draft of criterion 5, "every listing in
+  `search_results` respects the price ceiling and size", over five fixed
+  queries.
+- *What I changed:* before committing it, Claude noticed that a query
+  returning `[]` would pass that check trivially, since there are no listings
+  to violate anything. It added "a query that returns no listings counts as a
+  fail" to the criterion, so it can't pass by finding nothing. That went
+  in before any tool had been run, in the Milestone 3 commit.
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+**Moment 2: the cargo pants in a search for graphic tees**
+
+- *What I asked for:* to test `search_listings('graphic tee', max_price=30)`
+  on its own.
+- *What came back:* six results. The sixth was *Low-Rise Cargo Pants —
+  Khaki*, which scored 1 because its description says *"Great for layering
+  with a long tee"*.
+- *What I changed:* nothing in the code. The match follows the spec as
+  written (description-only words score 1 and rank last), and changing the
+  scoring to hide it after seeing the output would mean tuning against my own
+  test. It's written up under Sample Run as the first thing to look at in
+  unit 4. A smaller change from the same step: when pasting the fit cards
+  into this README, Claude had straightened the model's curly apostrophes
+  (`’` to `'`). It caught that and restored them in the Milestone 5 commit, so
+  the pasted output matches what the program actually printed.
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
