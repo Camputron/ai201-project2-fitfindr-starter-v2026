@@ -78,24 +78,62 @@ From `python app.py fields` and `python app.py listings --full -n 6`:
 
 ### `search_listings`
 
-- **What it does:**
-- **Inputs:** <!-- name and type each: `max_price` (float), not "a price" -->
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Filters `data/listings.json` by price ceiling and size,
+  scores what's left by keyword overlap with the description, and returns the
+  best matches first. It makes no model call.
+- **Inputs:** `description` (str), keywords such as `"vintage graphic tee"`;
+  `size` (str or None), such as `"M"`, `"8"` or `"W30"`, where None means no
+  size filter; `max_price` (float or None), an inclusive ceiling in dollars,
+  where None means no price filter.
+- **Returns:** a `list[dict]` of at most `config.SEARCH_RESULT_LIMIT` (10)
+  listing dicts, each the full record from the data with all 11 fields (`id`,
+  `title`, `description`, `category`, `style_tags`, `size`, `condition`,
+  `price`, `colors`, `brand`, `platform`).
+  - **Order:** sorted by score, highest first; ties go to the lower price.
+  - **Scoring:** words in the description are lowercased, filler words are
+    dropped, and `tee`/`t-shirt`/`tshirt` count as the same word. Each
+    remaining keyword scores **2** if it appears in the `title` or a
+    `style_tags` entry, and **1** if it appears only in `description`,
+    `category`, `colors` or `brand`. Listings scoring 0 are dropped.
+  - **Size rule:** both sizes are split into tokens on spaces, `/` and
+    brackets, then compared token by token. So `"M"` matches `M`, `S/M` and
+    `M/L` but not `XL`. `"8"` matches `US 8` but not `US 8.5`. `"W30"`
+    matches `W30` and `W30 L30`. A `One Size` listing matches any letter-size
+    request (XS–XXL) but not a shoe or waist size.
+- **When it has nothing:** returns `[]`, an empty list. It never returns
+  `None` and never raises for "no matches".
 
 ### `suggest_outfit`
 
-- **What it does:**
-- **Inputs:**
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Asks the model for one or two outfits built around the
+  thrifted item, using pieces from the user's wardrobe.
+- **Inputs:** `new_item` (dict), one listing dict as returned by
+  `search_listings`; `wardrobe` (dict), `{"items": list[dict]}`, where each
+  item has `name`, `category`, `colors`, `style_tags` and `notes`.
+- **Returns:** a non-empty `str` of one or two outfit ideas. With a
+  non-empty wardrobe, each outfit names wardrobe pieces by their `name`.
+  With an **empty wardrobe** (`items == []`), it returns general styling
+  advice for the item, prefixed with exactly
+  `"No saved wardrobe yet, so here are general ideas: "`, so that path can be
+  seen in the output.
+- **When it has nothing:** if `new_item` is `None` or `{}`, it returns the
+  string `"No item to style: search found nothing to build an outfit
+  around."` without calling the model. The loop is built so this never
+  happens.
 
 ### `create_fit_card`
 
-- **What it does:**
-- **Inputs:**
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Asks the model to write a short caption someone would
+  actually post about the find.
+- **Inputs:** `outfit` (str), the text `suggest_outfit` returned;
+  `new_item` (dict), the same listing dict that went into `suggest_outfit`.
+- **Returns:** a `str` caption of 2–4 sentences, written like a post rather
+  than a product description. It mentions the item, its price written as
+  `$` plus the number (e.g. `$18`), and its platform, once each. It runs at
+  `config.TEMPERATURE` (0.9), so the wording changes from run to run.
+- **When it has nothing:** if `outfit` is empty or only whitespace, it returns
+  the string `"Can't write a fit card without an outfit suggestion."` without
+  calling the model.
 
 ---
 
@@ -112,7 +150,11 @@ From `python app.py fields` and `python app.py listings --full -n 6`:
      The grader checks your code against what you claim here, so the file and
      function have to be real. -->
 
-**Branch rule:**
+**Branch rule:** If `search_listings` returns an empty list, put a message in
+`session["error"]` and stop, without calling `suggest_outfit` or
+`create_fit_card`. The message names the filters that were applied (price
+ceiling, size, keywords) and says which one to loosen first. Otherwise, take
+the first result as `session["selected_item"]` and go to `suggest_outfit`.
 
 **Where it lives:** `agent.py::run_agent`
 
