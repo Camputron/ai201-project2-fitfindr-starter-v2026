@@ -24,10 +24,15 @@ data earns credit; *"80% seemed reasonable"* does not.
 Given a query that matches at least one listing, the agent completes all three
 tool calls and returns a fit card — in at least 4 of 5 tries.
 
-**Why this target:**
-<!-- Why 4 of 5 and not 5 of 5? Something about your search, probably —
-     "my search is a plain keyword match and some phrasings will miss" is a
-     real answer. -->
+**Why this target:** 4 and not 5, because this path makes two model calls per
+run on a free tier capped at 15 requests a minute, and `generate.py` gives up
+after 5 retries. A run that exhausts its retries during a busy eval doesn't
+return a fit card, even though nothing in my code is wrong. The search can
+also fail, because it's a plain keyword match. A query phrased with words that
+don't appear in a listing's title, tags or description ("tshirt" is
+handled, "top with a print on it" isn't) finds nothing, even if a human
+would call the listing a match. I'd rather the target allow for one of those
+than claim the model and my keyword list are perfect.
 
 ---
 
@@ -36,67 +41,83 @@ tool calls and returns a fit card — in at least 4 of 5 tries.
 Given a query that matches no listings, the agent stops before calling
 `suggest_outfit` and returns a message naming what to change — 5 of 5 tries.
 
-**Why this target:**
-<!-- Why is 5 of 5 reasonable here when criterion 1 isn't? What's different
-     about this path? -->
+**Why this target:** 5 of 5, because nothing on this path is random.
+`search_listings` makes no model call. It's a filter and a keyword count over
+a fixed file, so the same query returns `[]` every time, and the branch in
+`agent.py::run_agent` is a plain `if not results`. The error message is built
+by my code from the parsed filters, not by the model, so "names what to change"
+can't vary either. If this misses even once, it's a bug, not bad luck.
 
 ---
 
-## 3. Something about state
+## 3. The item search found is the item every later tool received
 
-<!-- YOU WRITE THIS ONE.
+On a query that matches, `session["selected_item"]["id"]` equals
+`session["search_results"][0]["id"]`, and the `item_id` recorded in
+`session["tool_calls"]` for both the `suggest_outfit` call and the
+`create_fit_card` call is that same id. That has to hold in 5 of 5 runs of
+`vintage graphic tee under $30`.
 
-     How would you know that the item your search found is the same item the
-     next tool received? Name something countable or observable.
-
-     This is the criterion people find hardest, because state failure doesn't
-     look like state failure — it looks like a tool problem. Something that
-     compares session["selected_item"] against what actually reached
-     suggest_outfit is the shape you're after. -->
-
-
-
-**Why this target:**
-
-
-
----
-
-## 4. Something about the fit card
-
-<!-- YOU WRITE THIS ONE.
-
-     The fit card calls a model, so the same input can produce different words
-     each time. That's not a bug — it's the nature of the tool. So what would
-     make it acceptable?
-
-     Think about what you'd actually be unhappy to see. A caption that never
-     mentions the price? Two different items producing the same opening
-     sentence? A card longer than a caption anyone would post? Any of those can
-     be turned into a number. -->
-
-
-
-**Why this target:**
-
-
+**Why this target:** 5 of 5, because handing one dict along is deterministic
+code. There's no model in between that could pick a different item. The risk
+I'm guarding against is a state bug that *looks* like a tool problem: the
+loop reading a stale variable, re-running the search, or passing
+`search_results` where it should pass `selected_item`. Any of those would still
+produce a plausible outfit and a plausible caption, so the only way to see
+it is to compare ids. That's why `run_agent` records the id of the item it
+actually passed into each tool, rather than me trusting that it did.
 
 ---
 
-## 5. Your choice
+## 4. The fit card is a postable caption that gets the facts right
 
-<!-- YOU WRITE THIS ONE TOO.
+For 5 runs of `vintage graphic tee under $30`, the fit card in
+`session["fit_card"]`:
 
-     Pick something you actually care about getting right. Speed, the empty
-     wardrobe path, what happens when the model can't be reached, whether the
-     search respects a price ceiling — anything, as long as it names a number
-     or an observable outcome. -->
+- is 2 to 4 sentences, counting a sentence as text ending in `.`, `!` or `?`,
+  with hashtags and emoji not counted on their own;
+- contains the selected item's price as `$` plus the number (`$18` or
+  `$18.00`), matching `session["selected_item"]["price"]`;
+- names `session["selected_item"]["platform"]` (case-insensitive).
 
+All three have to hold in at least 4 of 5 runs.
 
+**Why this target:** These three are what would make me not post a caption. A
+wrong price is worse than no caption, and one that's eight sentences long isn't
+a caption. The wording is meant to change from run to run (temperature 0.9),
+so I'm not checking the words, only facts I can count. I set it at 4 of 5 and
+not 5, because the price and platform only appear because my prompt asks for
+them, and at 0.9 the model sometimes ignores a formatting instruction or adds
+an extra sentence. A cap of 4 sentences is tight enough that I expect one run
+to go over occasionally.
 
-**Why this target:**
+---
 
+## 5. Search respects the price ceiling and the size the user asked for
 
+For each of these 5 queries, **every** listing in `session["search_results"]`
+(not just the first) has `price` ≤ the stated ceiling and passes the size
+rule written in the README's Tool Inventory:
+
+1. `vintage graphic tee under $30`
+2. `denim jacket under $50`
+3. `platform sneakers size 8`
+4. `90s track jacket in size M`
+5. `oversized flannel size L under $25`
+
+A query that returns no listings counts as a fail, because an empty list
+passes any filter without checking anything.
+
+Target: 5 of 5 queries.
+
+**Why this target:** This checks two of my own pieces at once: the regex that
+pulls `max_price` and `size` out of the query, and the filter in
+`search_listings`. Both are deterministic, so 5 of 5. The sizes in this data
+are where it's easy to be wrong without noticing. `"l" in "xl"` and
+`"8" in "us 8.5"` are both True, so a lazy filter would show size 8.5 shoes
+to someone who asked for 8, or an XL flannel to someone who asked for L. The
+results would still look like reasonable search results, which is exactly why
+I check every listing and not just the top one.
 
 ---
 
