@@ -156,11 +156,61 @@ From `python app.py fields` and `python app.py listings --full -n 6`:
 ceiling, size, keywords) and says which one to loosen first. Otherwise, take
 the first result as `session["selected_item"]` and go to `suggest_outfit`.
 
-**Where it lives:** `agent.py::run_agent`
+**Where it lives:** `agent.py::run_agent`. The `if not session["search_results"]`
+check is in the `"search"` step. The message is built by
+`agent.py::_no_results_message`.
 
-**How the query is parsed:** <!-- regex, string splitting, or asking the model — say which -->
+**How it's a loop rather than a list:** `run_agent` is a `while` loop over a
+`next_step` variable (`parse → search → suggest → fit_card → done`). Each
+step sets the next one based on what it just got back, and the search step
+jumps straight to `done` when the list is empty. Every pass calls
+`trace.check_iterations()`, so a step that never reaches `done` stops at
+`MAX_ITERATIONS` (10) instead of running forever.
 
-**What moves through the session:** <!-- which fields, in what order -->
+**How the empty-search message names what to change:** `_no_results_message`
+re-runs `search_listings` with the price ceiling removed, then with the size
+removed. If either finds something, the message names that filter. If
+neither does, it says the keywords are the problem and gives examples of
+what the listings contain. Real messages:
+
+```
+Nothing matched 'vintage graphic tee' under $10. To find something, raise your price ceiling above $10.
+Nothing matched 'cardigan' in size W40. To find something, drop the size W40 filter.
+Nothing matched 'designer ballgown' in size XXS under $5. To find something, try different or fewer keywords — the listings are thrift pieces like 'vintage tee', 'denim jacket', 'cardigan' or 'sneakers', or loosen the size or price as well.
+```
+
+**How the query is parsed:** regex, in `agent.py::parse_query`, not the model.
+It's free and deterministic, and criterion 5 needs the same query to give
+the same filters every time.
+
+- **Price:** `under`, `below`, `less than`, `max` or `up to` followed by a
+  number, or a bare `$30`.
+- **Size:** `size` (optionally `in size`) followed by XXS–XXL, a number like
+  `8` or `8.5`, or a waist like `W30`.
+- **Description:** whatever is left. Filler words (`looking`, `for`, `a`, ...)
+  are dropped later, inside `search_listings`.
+
+**What moves through the session, in order:**
+
+1. `query`
+2. `parsed` (`description`, `size`, `max_price`)
+3. `search_results`, the full list
+4. `selected_item` = `search_results[0]`
+5. `outfit_suggestion`, from `suggest_outfit(session["selected_item"], session["wardrobe"])`
+6. `fit_card`, from `create_fit_card(session["outfit_suggestion"], session["selected_item"])`
+
+Each tool reads its inputs out of the session, not from a local variable
+left over from the step before. I added one field, `tool_calls`: one entry
+per tool call, recording the `id` of the item that call actually received.
+That's what makes criterion 3 checkable. After a real run:
+
+```
+selected: lst_002
+tool_calls: [{'tool': 'search_listings', 'item_id': None}, {'tool': 'suggest_outfit', 'item_id': 'lst_002'}, {'tool': 'create_fit_card', 'item_id': 'lst_002'}]
+
+(empty search)
+EMPTY tool_calls: [{'tool': 'search_listings', 'item_id': None}] | outfit: None | fit_card: None
+```
 
 ---
 
@@ -171,11 +221,34 @@ the first result as `session["selected_item"]` and go to `suggest_outfit`.
      1. One FULL query and its output, pasted as text.
      2. Your three per-tool terminal tests — the command and what it printed. -->
 
-**One full query**
+**One full query** (`AI201_CACHE=0`, example wardrobe)
 
 ```
-$ python app.py ask '...'
+$ python app.py ask 'vintage graphic tee under $30'
 
+
+  Found:    Y2K Baby Tee — Butterfly Print — $18.0 on depop
+
+  Outfit:   **Outfit 1: Y2K Casual**
+Pair the baby tee with the baggy straight-leg jeans in dark wash to nail the classic 2000s proportion play. Slip on the chunky white sneakers and sling the black crossbody bag over your shoulder. Throw on the vintage black denim jacket if you need an extra layer.
+
+**Outfit 2: Sporty Contrast**
+Tuck the butterfly tee into the wide-leg khaki trousers for a more fitted-versus-baggy silhouette. Wear the black cropped zip hoodie unzipped over top and lace up the black combat boots to ground the pastel top. Finish the look with the black crossbody bag.
+
+  Fit card: Scored this literal dream Y2K baby tee on depop for just $18 and I’m obsessed with the butterfly graphic. Can't wait to lean into the early 2000s proportion play by pairing it with baggy dark wash denim and chunky sneakers. 🦋✨ #depopfinds #y2kstyle
+
+2 model calls this session, 669 prompt + 204 output tokens
+```
+
+And the branch, with a query nothing can match:
+
+```
+$ python app.py ask 'designer ballgown size XXS under $5'
+
+
+  Nothing matched 'designer ballgown' in size XXS under $5. To find something, try different or fewer keywords — the listings are thrift pieces like 'vintage tee', 'denim jacket', 'cardigan' or 'sneakers', or loosen the size or price as well.
+
+0 model calls this session
 ```
 
 **The three tools, tested one at a time**
@@ -217,10 +290,10 @@ No saved wardrobe yet, so here are general ideas: Pair the tee with mid-rise or 
 
 ```
 $ python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('jeans and white sneakers', load_listings()[1]))"
-Scored this dreamy butterfly baby tee on depop for just $18 and I'm literally obsessed. The pink and purple graphic gives major early 2000s energy. Can't wait to throw it on with my favorite jeans and crisp white sneakers for an easy weekend look. 🦋✨ #y2kstyle #depopfinds
+Scored this dreamy butterfly baby tee on depop for just $18 and I’m literally obsessed. The pink and purple graphic gives major early 2000s energy. Can’t wait to throw it on with my favorite jeans and crisp white sneakers for an easy weekend look. 🦋✨ #y2kstyle #depopfinds
 
 (same command, second run)
-Scored this absolute dream of a Y2K baby tee on depop for just $18! The little butterfly graphic is so nostalgic and the fit is seriously flattering. Can't wait to throw it on with my favorite beat-up jeans and fresh white sneakers for the easiest everyday fit. 🦋✨
+Scored this absolute dream of a Y2K baby tee on depop for just $18! The little butterfly graphic is so nostalgic and the fit is seriously flattering. Can’t wait to throw it on with my favorite beat-up jeans and fresh white sneakers for the easiest everyday fit. 🦋✨
 
 (third run)
 Scored this adorable Y2K butterfly baby tee on depop for just $18 and I am obsessed. The fit is giving major early 2000s nostalgia, especially paired with classic jeans and fresh white sneakers. Such a cute little addition to the rotation! 🦋✨
