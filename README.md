@@ -57,6 +57,25 @@
      on, and if you don't decide it here you'll discover it as a crash in
      Milestone 5. -->
 
+### The data these tools read
+
+From `python app.py fields` and `python app.py listings --full -n 6`:
+
+- **`data/listings.json`**: 40 listings. Each has `id`, `title`,
+  `description`, `category` (tops 15, bottoms 10, outerwear 8, shoes 4,
+  accessories 3), `style_tags` (list), `size`, `condition`, `price` (float,
+  $12–$75), `colors` (list), `brand` and `platform` (depop, thredUp or
+  poshmark).
+- **`brand` is `None` on 32 of the 40**, so nothing I build can assume it's
+  there.
+- **`size` isn't one format.** There are 22 distinct values: letter sizes
+  (`M`, `S/M`, `M/L`), annotated ones (`XL (oversized)`), shoe sizes
+  (`US 8`, `US 8.5`), waists (`W28`, `W30 L30`) and `One Size`. A substring
+  test gets these wrong: `"l" in "xl"` and `"8" in "us 8.5"` are both True.
+- **A wardrobe** is `{"items": [...]}`, where each item has `id`, `name`,
+  `category`, `colors`, `style_tags` and `notes` (sometimes `None`). The empty
+  wardrobe is the same shape with `"items": []`.
+
 ### `search_listings`
 
 - **What it does:**
