@@ -180,20 +180,58 @@ $ python app.py ask '...'
 
 **The three tools, tested one at a time**
 
-```
-$ python -c "from tools import search_listings; print(search_listings('graphic tee', max_price=30))"
+Run with `AI201_CACHE=0`, so every model call is a real one. `search_listings`
+is printed one listing per line, because the raw list of 11-field dicts is
+unreadable.
 
 ```
+$ python -c "from tools import search_listings; r=search_listings('graphic tee', max_price=30); print(len(r),'results'); [print(' ',l['id'],l['title'],l['price'],l['size'],l['platform']) for l in r]"
+6 results
+  lst_002 Y2K Baby Tee — Butterfly Print 18.0 S/M depop
+  lst_033 Vintage Band Tee — Faded Grey 19.0 L depop
+  lst_006 Graphic Tee — 2003 Tour Bootleg Style 24.0 L depop
+  lst_017 Mesh Long-Sleeve Top — Black 15.0 S/M depop
+  lst_015 Vintage Graphic Hoodie — Faded Black 26.0 L depop
+  lst_011 Low-Rise Cargo Pants — Khaki 27.0 W29 poshmark
+
+$ python -c "from tools import search_listings; print(search_listings('designer ballgown', size='XXS', max_price=5))"
+[]
+```
+
+The cargo pants at the bottom aren't a tee. They score 1 because their
+description says *"Great for layering with a long tee"*. That's the weak
+(description-only) match working as specified, and it's ranked last, but it's
+also the first thing I'd look at if search quality comes up in unit 4.
 
 ```
-$ python -c "from tools import suggest_outfit; ..."
+$ python -c "from tools import suggest_outfit; from utils.data_loader import get_example_wardrobe, load_listings; print(suggest_outfit(load_listings()[1], get_example_wardrobe()))"
+**Outfit 1: Casual Y2K Contrast**
+Pair the baby tee with your **Baggy straight-leg jeans, dark wash**. Add the **Brown leather belt** to cinch the high waist. Finish the look with your **Chunky white sneakers** and the **Black crossbody bag**.
 
+**Outfit 2: Edgy Streetwear Mix**
+Tuck the baby tee into your **Wide-leg khaki trousers**. Layer the **Vintage black denim jacket** over top for a structured contrast. Complete the outfit with your **Black combat boots** and **Black crossbody bag**.
+
+$ python -c "from tools import suggest_outfit; from utils.data_loader import get_empty_wardrobe, load_listings; print(suggest_outfit(load_listings()[1], get_empty_wardrobe()))"
+No saved wardrobe yet, so here are general ideas: Pair the tee with mid-rise or low-rise blue denim jeans and white canvas sneakers for an easy, everyday Y2K look. Alternatively, layer it with a black pleated tennis skirt and chunky platform sandals to lean into the vintage aesthetic. Add a small shoulder bag and simple silver hoop earrings to complete either outfit.
 ```
 
 ```
-$ python -c "from tools import create_fit_card; ..."
+$ python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('jeans and white sneakers', load_listings()[1]))"
+Scored this dreamy butterfly baby tee on depop for just $18 and I'm literally obsessed. The pink and purple graphic gives major early 2000s energy. Can't wait to throw it on with my favorite jeans and crisp white sneakers for an easy weekend look. 🦋✨ #y2kstyle #depopfinds
 
+(same command, second run)
+Scored this absolute dream of a Y2K baby tee on depop for just $18! The little butterfly graphic is so nostalgic and the fit is seriously flattering. Can't wait to throw it on with my favorite beat-up jeans and fresh white sneakers for the easiest everyday fit. 🦋✨
+
+(third run)
+Scored this adorable Y2K butterfly baby tee on depop for just $18 and I am obsessed. The fit is giving major early 2000s nostalgia, especially paired with classic jeans and fresh white sneakers. Such a cute little addition to the rotation! 🦋✨
+
+$ python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(repr(create_fit_card('   ', load_listings()[1])))"
+"Can't write a fit card without an outfit suggestion."
 ```
+
+The three cards share facts but not wording, so the cache is off and
+temperature 0.9 is doing its job. All three open with "Scored this...", though.
+I'd watch for that if a later criterion is about variety.
 
 ---
 
